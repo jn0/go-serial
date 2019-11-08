@@ -17,34 +17,6 @@ func exists(path string) bool {
 	return e == nil || !os.IsNotExist(e)
 }
 
-type servicePipe struct {
-	r, w *os.File
-	rfd, wfd Ioctl
-}
-func (pipe *servicePipe) Open() (e error) {
-	pipe.r, pipe.w, e = os.Pipe()
-	if e != nil { return e; }
-	pipe.rfd.Set(pipe.r.Fd())
-	pipe.wfd.Set(pipe.w.Fd())
-	e = pipe.rfd.NonBlock(true)
-	if e != nil { return e; }
-	return nil
-}
-func (pipe *servicePipe) Close() {
-	pipe.r.Close()
-	pipe.r = nil
-	pipe.rfd = ZeroIoctl
-	pipe.w.Close()
-	pipe.w = nil
-	pipe.wfd = ZeroIoctl
-}
-func (pipe *servicePipe) Read() (e error) {
-	tmp := make([]byte, 1024)
-	_, e = syscall.Read(int(pipe.rfd), tmp)
-	if e != nil { return e; }
-	return nil
-}
-
 type Port struct {
 	file *os.File
 	fd Ioctl
@@ -99,14 +71,9 @@ func (self *Port) Open(path string) (e error) {
 	if !self.rtscts {
 		self.fd.SetRTS(false)
 	}
-	e = self.ResetInput()
-	assert(e, "ResetInput")
-
-	e = self.pipe.abort_read.Open()
-	assert(e, "pipe(read)")
-
-	e = self.pipe.abort_write.Open()
-	assert(e, "pipe(write)")
+	assert(self.ResetInput(), "ResetInput")
+	assert(self.pipe.abort_read.Open(), "pipe(read)")
+	assert(self.pipe.abort_write.Open(), "pipe(write)")
 
 	return nil
 }
@@ -127,7 +94,7 @@ func (self *Port) Close() error {
 
 func (self *Port) cancel_read() (e error) {
 	if self.IsOpen() {
-		_, e = self.pipe.abort_read.w.Write([]byte("x"))
+		e = self.pipe.abort_read.Notify()
 		if e != nil { return e; }
 	}
 	return nil
@@ -135,7 +102,7 @@ func (self *Port) cancel_read() (e error) {
 
 func (self *Port) cancel_write() (e error) {
 	if self.IsOpen() {
-		_, e = self.pipe.abort_write.w.Write([]byte("x"))
+		e = self.pipe.abort_write.Notify()
 		if e != nil { return e; }
 	}
 	return nil
@@ -167,7 +134,7 @@ func (self *Port) write(data []byte) (sent int, e error) {
 		}
 		*/
 		self.fd.FdSet(&wset)
-		self.pipe.abort_write.rfd.FdSet(&rset)
+		self.pipe.abort_write.FdSetRead(&rset)
 		n = 0
 		/*
 		if timeout.is_infinite {
@@ -185,8 +152,8 @@ func (self *Port) write(data []byte) (sent int, e error) {
 		*/
 		n, e = select2(&rset, &wset, nil, tmo)
 		assert(e, "select")
-		if n > 0 && self.pipe.abort_write.rfd.FdIsSet(&rset) {
-			assert(self.pipe.abort_write.Read(),
+		if n > 0 && self.pipe.abort_write.FdIsSetRead(&rset) {
+			assert(self.pipe.abort_write.Fetch(),
 				"read(pipe.abort_write.r)")
 			break
 		}
@@ -211,15 +178,15 @@ func (self *Port) read(max int) (data []byte, e error) {
 
 		var rset syscall.FdSet
 		self.fd.FdSet(&rset)
-		self.pipe.abort_read.rfd.FdSet(&rset)
+		self.pipe.abort_read.FdSetRead(&rset)
 		n, e = select2(&rset, nil, nil, timeout.Seconds())
 		assert(e, "select")
 		if n == 0 { // timeout
 			return data, PortTimeoutError
 		}
 
-		if self.pipe.abort_read.rfd.FdIsSet(&rset) {
-			e = self.pipe.abort_read.Read()
+		if self.pipe.abort_read.FdIsSetRead(&rset) {
+			e = self.pipe.abort_read.Fetch()
 			assert(e, "read(pipe.abort_read.r)")
 			break
 		}
