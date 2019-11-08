@@ -66,10 +66,12 @@ func (self *Port) Open(path string) (e error) {
 	assert(e, "Open: cannot configure port")
 
 	if !self.dsrdtr {
-		self.fd.SetDTR(false)
+		self.fd.SetDTR(false) // doesn't work actually
+		// assert(self.fd.SetDTR(false), "SetDTR")
 	}
 	if !self.rtscts {
-		self.fd.SetRTS(false)
+		self.fd.SetRTS(false) // doesn't work actually
+		// assert(self.fd.SetRTS(false), "SetRTS")
 	}
 	assert(self.ResetInput(), "ResetInput")
 	assert(self.pipe.abort_read.Open(), "pipe(read)")
