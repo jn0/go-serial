@@ -9,7 +9,6 @@ import (
 )
 // import "fmt"
 
-const USB0 = "/dev/ttyUSB0"
 const PortOpenFlags = os.O_RDWR | syscall.O_NOCTTY | syscall.O_NONBLOCK
 const DefaultTimeout = time.Millisecond * 50 // 0.05 sec
 
@@ -126,38 +125,6 @@ func (self *Port) Close() error {
 	return nil
 }
 
-func fd_set(fd_orig uintptr, set *syscall.FdSet) {
-	const bits = 64
-	var fd = uint64(fd_orig)
-	var clause = fd / bits
-	if clause > 15 { panic("fd too big"); }
-	var bit int64 = 1 << (fd % bits)
-	set.Bits[clause] |= bit
-}
-
-func fd_isset(fd_orig uintptr, set *syscall.FdSet) bool {
-	const bits = 64
-	var fd = uint64(fd_orig)
-	var clause = fd / bits
-	if clause > 15 { panic("fd too big"); }
-	var bit int64 = 1 << (fd % bits)
-	return set.Bits[clause] & bit == bit
-}
-
-func fd_count(set *syscall.FdSet) (n int) {
-	var i uintptr
-	for i = 0; i < 64 * 16; i++ {
-		if fd_isset(i, set) { n++; }
-	}
-	return n
-}
-
-func timeval(seconds float64) (res syscall.Timeval) {
-	res.Sec = int64(seconds)
-	res.Usec = int64(seconds * 1000000.) % 1000000
-	return res
-}
-
 func (self *Port) cancel_read() (e error) {
 	if self.IsOpen() {
 		_, e = self.pipe.abort_read.w.Write([]byte("x"))
@@ -181,11 +148,10 @@ func (self *Port) write(data []byte) (sent int, e error) {
 		return 0, nil
 	}
 	var timeout time.Duration = DefaultTimeout
+	var tmo float64
 	var n int
 	var rset, wset syscall.FdSet
 	var suspect error
-	var tmo syscall.Timeval
-	var tmop *syscall.Timeval
 	t0 := time.Now()
 	for sent < data_len {
 		
@@ -205,25 +171,23 @@ func (self *Port) write(data []byte) (sent int, e error) {
 		n = 0
 		/*
 		if timeout.is_infinite {
-			tmop = nil
+			tmo = NoSelectTimeout
 			suspect = NewPortError("write failed on select")
 		} else {
 		*/
 			if timeout.Seconds() < 0. {
 				return sent, PortTimeoutError
 			}
-			tmo = timeval(timeout.Seconds())
-			tmop = &tmo
+			tmo = timeout.Seconds()
 			suspect = PortTimeoutError
 		/*
 		}
 		*/
-		n, e = syscall.Select(fd_count(&rset) + fd_count(&wset),
-					&rset, &wset, nil, tmop)
+		n, e = select2(&rset, &wset, nil, tmo)
 		assert(e, "select")
 		if n > 0 && self.pipe.abort_write.rfd.FdIsSet(&rset) {
-			e = self.pipe.abort_write.Read()
-			assert(e, "read(pipe.abort_write.r)")
+			assert(self.pipe.abort_write.Read(),
+				"read(pipe.abort_write.r)")
 			break
 		}
 		if n == 0 || !self.fd.FdIsSet(&wset) {
@@ -244,18 +208,17 @@ func (self *Port) read(max int) (data []byte, e error) {
 		//	 all over the code within the loop
 
 		timeout -= time.Now().Sub(t0)
-		tmo := timeval(timeout.Seconds())
 
 		var rset syscall.FdSet
-		fd_set(uintptr(self.fd), &rset)
-		fd_set(uintptr(self.pipe.abort_read.rfd), &rset)
-		n, e = syscall.Select(fd_count(&rset), &rset, nil, nil, &tmo)
+		self.fd.FdSet(&rset)
+		self.pipe.abort_read.rfd.FdSet(&rset)
+		n, e = select2(&rset, nil, nil, timeout.Seconds())
 		assert(e, "select")
 		if n == 0 { // timeout
 			return data, PortTimeoutError
 		}
 
-		if fd_isset(uintptr(self.pipe.abort_read.rfd), &rset) {
+		if self.pipe.abort_read.rfd.FdIsSet(&rset) {
 			e = self.pipe.abort_read.Read()
 			assert(e, "read(pipe.abort_read.r)")
 			break

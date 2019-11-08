@@ -28,6 +28,9 @@ func (fd *Ioctl) fcntl(a1 int, a2 uintptr) (r1, r2 uintptr, err syscall.Errno) {
 func (fd *Ioctl) FdSet(set *syscall.FdSet) {
 	fd_set(uintptr(*fd), set)
 }
+func (fd *Ioctl) FdClr(set *syscall.FdSet) {
+	fd_clr(uintptr(*fd), set)
+}
 func (fd *Ioctl) FdIsSet(set *syscall.FdSet) bool {
 	return fd_isset(uintptr(*fd), set)
 }

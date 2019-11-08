@@ -4,9 +4,10 @@ import "fmt"
 import "strings"
 import "testing"
 
+const USB0 = "/dev/ttyUSB0"
+
 func TestMain(t *testing.T) {
 	var p Port
-	// b := make([]byte, 512)
 
 	fmt.Println("begin")
 
