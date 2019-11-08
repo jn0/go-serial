@@ -24,6 +24,9 @@ func (self *Console) Close() (e error) {
 	terminal.Restore(self.ttyFd, self.state)
 	self.ttyFd = -1
 	self.tty.Close()
+	if self.port != nil && self.port.IsOpen() {
+		self.port.Close()
+	}
 	return nil
 }
 func (self *Console) Open(p *Port) (e error) {
