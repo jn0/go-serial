@@ -33,6 +33,13 @@ type Port struct {
 		abort_read, abort_write servicePipe
 	}
 }
+func (self *Port) String() string {
+	if self.IsOpen() {
+		return "<sio.Port(" + self.file.Name() + ")>"
+	} else {
+		return "<sio.Port>"
+	}
+}
 func (self *Port) IsOpen() bool {
 	return self.file != nil && self.file.Name() != ""
 }
@@ -74,6 +81,7 @@ func (self *Port) Open(path string) (e error) {
 		// assert(self.fd.SetRTS(false), "SetRTS")
 	}
 	assert(self.ResetInput(), "ResetInput")
+	assert(self.ResetOutput(), "ResetOutput")
 	assert(self.pipe.abort_read.Open(), "pipe(read)")
 	assert(self.pipe.abort_write.Open(), "pipe(write)")
 
