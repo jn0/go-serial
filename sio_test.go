@@ -4,19 +4,39 @@ import "fmt"
 import "strings"
 import "testing"
 
+import (
+	"os"
+	"os/signal"
+	"syscall"
+)
+
 const USB0 = "/dev/ttyUSB0"
+
+var tty *Console
+
+func sighand(sigchan chan os.Signal) {
+	for {
+		fmt.Println("Waiting for signal")
+		sig := <- sigchan // wait for a signal
+		if tty != nil { tty.Close(); fmt.Println("tty restored"); }
+		panic(fmt.Sprintf("Killed with: %v", sig))
+	}
+}
 
 func TestMain(t *testing.T) {
 	var p Port
 
 	fmt.Println("begin")
 
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGTERM)
+	go sighand(sig)
+
 	e := p.Open(USB0)
 	if e != nil { panic(e); }
-	defer p.Close()
-	fmt.Println("Port is open")
+	fmt.Println("Port is open:", p.String())
 
-	tty, _ := NewConsole(&p); defer tty.Close()
+	tty, _ = NewConsole(&p); defer func() { tty.Close(); fmt.Println("tty restored"); }()
 
 	var i int = 0
 	for {
