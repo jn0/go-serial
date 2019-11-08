@@ -173,10 +173,10 @@ func (fd *Ioctl) Reconfigure(termios *syscall.Termios, port *Port) (e error) {
 	}()
 
 	if port.exclusive {
-		e = fd.Flock(syscall.LOCK_EX | syscall.LOCK_NB)
-		assert(e, "Flock(LOCK_EX|LOCK_NB)")
-		e = fd.Flock(syscall.LOCK_UN)
-		assert(e, "Flock(LOCK_UN)")
+		assert(fd.Flock(syscall.LOCK_EX | syscall.LOCK_NB),
+			"Flock(LOCK_EX|LOCK_NB)")
+	} else {
+		assert(fd.Flock(syscall.LOCK_UN), "Flock(LOCK_UN)")
 	}
 
 	*termios, e = fd.TcGetAttr()
