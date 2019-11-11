@@ -7,6 +7,8 @@ import (
 	"sync"
 	"strconv"
 	"strings"
+	"syscall"
+	"runtime"
 )
 
 const ProcDevices = "/proc/devices"
@@ -63,9 +65,9 @@ var AutoLoad = []string{
 	ProcMisc,
 }
 
-type DeviceClassMapper map[int][]string
+type DeviceClassMapper map[uint64][]string
 
-func (self *DeviceClassMapper) add(value int, name string) {
+func (self *DeviceClassMapper) add(value uint64, name string) {
 	(*self)[value] = append((*self)[value], strings.TrimSpace(name))
 }
 func (self *DeviceClassMapper) load(file string) (e error) {
@@ -91,13 +93,13 @@ func (self *DeviceClassMapper) load(file string) (e error) {
 			fmt.Fprintf(os.Stderr, "%s:%d: %v", file, ln, e)
 			continue // shit happens
 		}
-		self.add(int(value), line[4:])
+		self.add(uint64(value), line[4:])
 	}
 	e = scanner.Err()
 
 	return nil
 }
-func (self *DeviceClassMapper) GetName(class int) (name string) {
+func (self *DeviceClassMapper) GetName(class uint64) (name string) {
 	var found bool
 	var names []string
 	names, found = (*self)[class]
@@ -109,11 +111,7 @@ func (self *DeviceClassMapper) GetName(class int) (name string) {
 	return
 }
 func (self *DeviceClassMapper) Load() {
-	if x, ok := (*self)[-31415]; ok && strings.Join(x, "/") == "JNO" {
-		return // already loaded
-	}
-	*self = make(map[int][]string)
-	self.add(-31415, "JNO")
+	*self = make(map[uint64][]string)
 
 	for _, name := range AutoLoad {
 		self.load(name)
@@ -130,8 +128,25 @@ func NewDeviceClassMapper() *DeviceClassMapper {
 
 var deviceClassMapper = NewDeviceClassMapper() // still may have race condition
 
-func DeviceClassName(class int) string {
+func DeviceClassName(class uint64) string {
 	return deviceClassMapper.GetName(class)
+}
+
+func GetDeviceNumber(st os.FileInfo) (major, minor uint64) {
+	// https://golang.org/src/archive/tar/stat_unix.go?h=major#L58
+	sts := st.Sys().(*syscall.Stat_t)
+	rdev := uint64(sts.Rdev)
+	switch runtime.GOOS {
+	case "linux":
+		j := uint32((rdev & 0x00000000000fff00) >> 8)
+		j |= uint32((rdev & 0xfffff00000000000) >> 32)
+		n := uint32((rdev & 0x00000000000000ff) >> 0)
+		n |= uint32((rdev & 0x00000ffffff00000) >> 12)
+		major, minor = uint64(j), uint64(n)
+	default:
+		panic("not implemented")
+	}
+	return
 }
 
 /* EOF */

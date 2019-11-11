@@ -7,7 +7,7 @@ import (
 	"strings"
 	"syscall"
 )
-// import "fmt"
+ import "fmt"
 
 const PortOpenFlags = os.O_RDWR | syscall.O_NOCTTY | syscall.O_NONBLOCK
 const DefaultTimeout = time.Millisecond * 50 // 0.05 sec
@@ -19,6 +19,7 @@ func exists(path string) bool {
 
 type Port struct {
 	file *os.File
+	stat os.FileInfo
 	fd Ioctl
 	exclusive bool
 	inter_byte_timeout float64
@@ -33,6 +34,18 @@ type Port struct {
 		abort_read, abort_write servicePipe
 	}
 }
+
+// NewSerialPort("/dev/ttyUSB0") returns ref to an open Port instance
+func NewSerialPort(dev string) *Port {
+	var p *Port = &Port{}
+	assert(p.Open(dev), "NewSerialPort(%+q)", dev)
+
+	maj, min := p.DeviceId()
+	fmt.Printf("[%d:%d] %s\n", maj, min, p.DeviceClassName())
+
+	return p
+}
+
 func (self *Port) String() string {
 	if self.IsOpen() {
 		return "<sio.Port(" + self.file.Name() + ")>"
@@ -50,8 +63,16 @@ func (self *Port) Open(path string) (e error) {
 		}
 	}()
 
-	assertb(exists(path), "Port.Open(%+q): no path", path)
+	stat, e := os.Stat(path)
+	if e != nil {
+		if os.IsNotExist(e) {
+			assert(e, "Port.Open(%+q): no path", path)
+		}
+		assert(e, "Port.Open(%+q): %v", path, e)
+	}
 	assertb(!self.IsOpen(), "Port.Open(%+q): *object* is already open", path)
+
+	self.stat = stat
 
 	self.exclusive = true
 	self.speed = BIT_RATE_B9600
@@ -100,6 +121,17 @@ func (self *Port) Close() error {
 		}
 	}
 	return nil
+}
+
+func (self *Port) DeviceId() (major, minor uint64) {
+	if self.IsOpen() {
+		major, minor = GetDeviceNumber(self.stat)
+	}
+	return
+}
+func (self *Port) DeviceClassName() string {
+	major, _ := self.DeviceId()
+	return DeviceClassName(major)
 }
 
 func (self *Port) cancel_read() (e error) {
