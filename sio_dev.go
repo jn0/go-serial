@@ -132,10 +132,13 @@ func DeviceClassName(class uint64) string {
 	return deviceClassMapper.GetName(class)
 }
 
+func GetRDev(st os.FileInfo) uint64 {
+	sts := st.Sys().(*syscall.Stat_t)
+	return uint64(sts.Rdev)
+}
 func GetDeviceNumber(st os.FileInfo) (major, minor uint64) {
 	// https://golang.org/src/archive/tar/stat_unix.go?h=major#L58
-	sts := st.Sys().(*syscall.Stat_t)
-	rdev := uint64(sts.Rdev)
+	rdev := GetRDev(st)
 	switch runtime.GOOS {
 	case "linux":
 		j := uint32((rdev & 0x00000000000fff00) >> 8)
