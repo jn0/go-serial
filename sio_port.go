@@ -43,6 +43,10 @@ func NewSerialPort(dev string) *Port {
 	maj, min := p.DeviceId()
 	fmt.Printf("[%d:%d] %s\n", maj, min, p.DeviceClassName())
 
+	var sysfs SysFS; sysfs.Use(GetRDev(p.stat))
+	fmt.Printf("Located:\n")
+	for i, x := range sysfs.Locate(SysfsClass, maj, min) { fmt.Printf("%5d:\t%+q\n", i, x); }
+
 	return p
 }
 
