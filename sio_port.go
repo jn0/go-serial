@@ -7,7 +7,7 @@ import (
 	"strings"
 	"syscall"
 )
- import "fmt"
+// import "fmt"
 
 const PortOpenFlags = os.O_RDWR | syscall.O_NOCTTY | syscall.O_NONBLOCK
 const DefaultTimeout = time.Millisecond * 50 // 0.05 sec
@@ -33,21 +33,19 @@ type Port struct {
 	pipe struct {
 		abort_read, abort_write servicePipe
 	}
+	sysfs []string
 }
 
 // NewSerialPort("/dev/ttyUSB0") returns ref to an open Port instance
 func NewSerialPort(dev string) *Port {
 	var p *Port = &Port{}
-	assert(p.Open(dev), "NewSerialPort(%+q)", dev)
-
-	maj, min := p.DeviceId()
-	fmt.Printf("[%d:%d] %s\n", maj, min, p.DeviceClassName())
-
-	var sysfs SysFS; sysfs.Use(GetRDev(p.stat))
-	fmt.Printf("Located:\n")
-	for i, x := range sysfs.Locate(SysfsClass, maj, min) { fmt.Printf("%5d:\t%+q\n", i, x); }
-
+	e := p.Open(dev)
+	assert(e, "NewSerialPort(%+q): %w", dev, e)
 	return p
+}
+
+func (self *Port) SysFS() []string {
+	return self.sysfs
 }
 
 func (self *Port) String() string {
@@ -93,6 +91,11 @@ func (self *Port) Open(path string) (e error) {
 	assert(e, "Port.Open(%+q)@OpenFile: %w", path, e)
 
 	self.fd.Set(self.file.Fd())
+
+	major, minor := self.DeviceId()
+	var sysfs SysFS
+	sysfs.Use(GetRDev(self.stat))
+	self.sysfs = sysfs.Locate(SysfsClass, major, minor)
 
 	e = self.fd.Reconfigure(&self.termios, self)
 	assert(e, "Open: cannot configure port")

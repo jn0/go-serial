@@ -107,4 +107,17 @@ func readlink(link string) (path string, e error) {
 	return
 }
 
+func PrintLocations(locations []string,
+		    printf func(string, ...interface{}) (int, error),
+) {
+	var n int
+	for i, v := range locations {
+		printf("%3d:\t%#v\n", i + 1, v)
+		n++
+	}
+	if n == 0 {
+		printf("%3d:\tnone\n", 0)
+	}
+}
+
 /* EOF */
