@@ -66,6 +66,23 @@ func (fd *Ioctl) NonBlock(set bool) (e error) {
 	return nil
 }
 
+func (fd *Ioctl) TIOCOUTQ() (count uint32, e error) {
+	defer func() {
+		if state := recover(); state != nil {
+			e = WrapError(state.(error))
+		}
+	}()
+
+	var buf [4]uint32
+	r1, r2, err := fd.ioctl(syscall.TIOCOUTQ, uintptr(unsafe.Pointer(&buf)))
+	if err != E_OK {
+		return 0, NewPortError("ioctl(%v, TIOCOUTQ, *): %v (r1=%v, r2=%v)",
+					fd, err, r1, r2)
+	}
+	count = buf[0]
+	return
+}
+
 func (fd *Ioctl) TIOCINQ() (count uint32, e error) {
 	defer func() {
 		if state := recover(); state != nil {
