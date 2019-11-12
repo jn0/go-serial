@@ -67,6 +67,13 @@ func TestMain(t *testing.T) {
 	port = NewSerialPort(USB0)
 	fmt.Println("Port is open:", port.String())
 
+	maj, min := port.DeviceId()
+	fmt.Printf("[%d:%d] %s\n", maj, min, port.DeviceClassName())
+
+	fmt.Println("Located:")
+	PrintLocations(port.SysFS(), fmt.Printf)
+
+
 	tty, _ = NewConsole(port)
 	defer func() { tty.Close(); fmt.Println("tty restored"); }()
 
