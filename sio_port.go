@@ -266,6 +266,8 @@ func (self *Port) read(max int) (data []byte, e error) {
 }
 
 func (self *Port) InWaiting() (n uint32, e error) {
+	self.lock.Lock(); defer self.lock.Unlock()
+
 	if !self.IsOpen() { return 0, PortNotOpenError; }
 	return self.fd.TIOCINQ()
 }
