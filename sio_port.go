@@ -6,6 +6,8 @@ import (
 	"time"
 	"strings"
 	"syscall"
+	"runtime"
+	"sync"
 )
 // import "fmt"
 
@@ -34,6 +36,7 @@ type Port struct {
 		abort_read, abort_write servicePipe
 	}
 	sysfs []string
+	lock sync.Mutex
 }
 
 // NewSerialPort("/dev/ttyUSB0") returns ref to an open Port instance
@@ -64,6 +67,8 @@ func (self *Port) Open(path string) (e error) {
 			e = WrapError(state.(error))
 		}
 	}()
+
+	self.lock.Lock(); defer self.lock.Unlock()
 
 	stat, e := os.Stat(path)
 	if e != nil {
@@ -116,6 +121,8 @@ func (self *Port) Open(path string) (e error) {
 	return nil
 }
 func (self *Port) Close() error {
+	self.lock.Lock(); defer self.lock.Unlock()
+
 	if self.file != nil {
 		self.file.Close()
 		self.file = nil
@@ -158,6 +165,8 @@ func (self *Port) cancel_write() (e error) {
 }
 
 func (self *Port) write(data []byte) (sent int, e error) {
+	self.lock.Lock(); defer self.lock.Unlock()
+
 	if !self.IsOpen() { return -1, PortNotOpenError; }
 	data_len := len(data)
 	if data_len == 0 {
@@ -170,6 +179,7 @@ func (self *Port) write(data []byte) (sent int, e error) {
 	var suspect error
 	t0 := time.Now()
 	for sent < data_len {
+		runtime.Gosched()
 		
 		timeout -= time.Now().Sub(t0)
 
@@ -214,12 +224,15 @@ func (self *Port) write(data []byte) (sent int, e error) {
 }
 
 func (self *Port) read(max int) (data []byte, e error) {
+	self.lock.Lock(); defer self.lock.Unlock()
+
 	if !self.IsOpen() { return nil, PortNotOpenError; }
 	var timeout time.Duration = DefaultTimeout
 	var n int
 	t0 := time.Now()
 	buf := make([]byte, max)
 	for len(data) < max {
+		runtime.Gosched()
 		// TODO: ignore EAGAIN, EALREADY, EWOULDBLOCK, EINPROGRESS, EINTR
 		//	 all over the code within the loop
 
@@ -228,8 +241,10 @@ func (self *Port) read(max int) (data []byte, e error) {
 		var rset syscall.FdSet
 		self.fd.FdSet(&rset)
 		self.pipe.abort_read.FdSetRead(&rset)
+
 		n, e = select2(&rset, nil, nil, timeout.Seconds())
 		assert(e, "select")
+
 		if n == 0 { // timeout
 			return data, PortTimeoutError
 		}
@@ -249,7 +264,15 @@ func (self *Port) read(max int) (data []byte, e error) {
 	}
 	return data, nil
 }
+
+func (self *Port) InWaiting() (n uint32, e error) {
+	if !self.IsOpen() { return 0, PortNotOpenError; }
+	return self.fd.TIOCINQ()
+}
+
 func (self *Port) Read(data []byte) (n int, e error) {
+	self.lock.Lock(); defer self.lock.Unlock()
+
 	defer func() {
 		if state := recover(); state != nil {
 			e = WrapError(state.(error))
@@ -264,6 +287,8 @@ func (self *Port) Read(data []byte) (n int, e error) {
 	return n, nil
 }
 func (self *Port) Write(data []byte) (n int, e error) {
+	self.lock.Lock(); defer self.lock.Unlock()
+
 	defer func() {
 		if state := recover(); state != nil {
 			e = WrapError(state.(error))
@@ -293,14 +318,12 @@ func (self *Port) ReadLine() (s string, e error) {
 	}()
 	var b = make([]byte, 1)
 	var n int
-	for ; b[0] != '\n'; {
-		// time.Sleep(10 * time.Millisecond)
+	for b[0] != '\n' {
+		runtime.Gosched()
 		n, e = self.Read(b)
-		// fmt.Println("Read:", n, e)
 		assert(e, "ReadLine<%+q>: %w", self.file.Name(), e)
 		if n > 0 {
 			s += string(b[:1])
-			// fmt.Printf("n=%v s=%+q\n", n, s)
 		}
 	}
 	return s, nil
@@ -316,6 +339,7 @@ func (self *Port) WriteLine(s string) (e error) {
 	b = []byte(s)
 	var n int
 	for ; l > 0; {
+		runtime.Gosched()
 		n, e = self.Write(b)
 		assert(e, "WriteLine<%+q>(%+q): %w", self.file.Name(), string(b), e)
 		l -= n

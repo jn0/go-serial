@@ -4,7 +4,6 @@ import (
 	"syscall"
 	"unsafe"
 )
-//import "fmt"
 
 const UERROR = uintptr(18446744073709551615)
 
@@ -65,6 +64,23 @@ func (fd *Ioctl) NonBlock(set bool) (e error) {
 	_, _, err := fd.fcntl(syscall.F_SETFL, uintptr(unsafe.Pointer(&buf)))
 	assertb(err == E_OK, "F_SETFL")
 	return nil
+}
+
+func (fd *Ioctl) TIOCINQ() (count uint32, e error) {
+	defer func() {
+		if state := recover(); state != nil {
+			e = WrapError(state.(error))
+		}
+	}()
+
+	var buf [4]uint32
+	r1, r2, err := fd.ioctl(syscall.TIOCINQ, uintptr(unsafe.Pointer(&buf)))
+	if err != E_OK {
+		return 0, NewPortError("ioctl(%v, TIOCINQ, *): %v (r1=%v, r2=%v)",
+					fd, err, r1, r2)
+	}
+	count = buf[0]
+	return
 }
 
 func (fd *Ioctl) get_low_latency_mode() (mode bool, e error) {
