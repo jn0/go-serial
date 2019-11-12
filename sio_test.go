@@ -24,34 +24,40 @@ func sighand(sigchan chan os.Signal) {
 	}
 }
 
-func userEnd(end chan bool, com chan string) {
-	var s, resp string
+func userEnd(end chan bool, com chan []byte) {
 	fmt.Println("User start")
-	var i int = 0
 	for {
-		tty.Write(fmt.Sprintf("[%d]\n", i)) ; i += 1
-		s, _ = tty.ReadLine()		// tty -> (s)
-		if strings.HasPrefix(s, "quit") {
-			break
+		if s, e := tty.ReadLine(); e != nil {
+			panic(e)
+		} else {
+			if strings.HasPrefix(s, "quit") {
+				break
+			}
+			com <- []byte(s + "\r")
 		}
-		com <- s
-		select { case resp = <- com: tty.Write(resp); }
 	}
 	end <- true
 	fmt.Println("User end")
 }
 
-func modemEnd(end chan bool, com chan string) {
-	var cmd, resp string
+func modemEnd(end chan bool, com chan []byte) {
 	fmt.Println("Modem start")
-	for {
+	for port.IsOpen() {
 		select {
-		case cmd = <- com:
-			tty.Send(cmd)			// (s) -> usb
-			resp, _ = tty.RecvUntil(Stops)	// usb -> (s)
-			com <- resp
-		case <- end:
-			break
+		case cmd := <- com: port.Write(cmd)
+		case <- end: break
+		default:
+			if n, e := port.InWaiting(); e != nil {
+				panic(e)
+			} else if n > 0 {
+				b := make([]byte, n)
+				if n, e := port.Read(b); e != nil {
+					panic(e)
+				} else if n == 0 {
+					continue
+				}
+				tty.Write(b)
+			}
 		}
 	}
 	fmt.Println("Modem end")
@@ -64,7 +70,7 @@ func TestMain(t *testing.T) {
 	signal.Notify(sig, syscall.SIGTERM, syscall.SIGINT)
 	go sighand(sig)
 
-	port = NewSerialPort(USB0)
+	port = NewSerialPort(USB0); defer port.Close()
 	fmt.Println("Port is open:", port.String())
 
 	maj, min := port.DeviceId()
@@ -73,12 +79,11 @@ func TestMain(t *testing.T) {
 	fmt.Println("Located:")
 	PrintLocations(port.SysFS(), fmt.Printf)
 
-
-	tty, _ = NewConsole(port)
+	tty, _ = NewConsole()
 	defer func() { tty.Close(); fmt.Println("tty restored"); }()
 
 	end := make(chan bool)		// termination mark
-	com := make(chan string)	// data xchg
+	com := make(chan []byte)	// data xchg
 
 	go userEnd(end, com)
 	go modemEnd(end, com)
