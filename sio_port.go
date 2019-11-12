@@ -8,8 +8,8 @@ import (
 	"syscall"
 	"runtime"
 	"sync"
+	"fmt"
 )
-// import "fmt"
 
 const PortOpenFlags = os.O_RDWR | syscall.O_NOCTTY | syscall.O_NONBLOCK
 const DefaultTimeout = time.Millisecond * 50 // 0.05 sec
@@ -53,7 +53,10 @@ func (self *Port) SysFS() []string {
 
 func (self *Port) String() string {
 	if self.IsOpen() {
-		return "<sio.Port(" + self.file.Name() + ")>"
+		major, minor := self.DeviceId()
+		return fmt.Sprintf("<sio.Port(%+q):%s [%d:%d]>",
+					self.file.Name(),
+					self.DeviceClassName(), major, minor)
 	} else {
 		return "<sio.Port>"
 	}
