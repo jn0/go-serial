@@ -57,6 +57,9 @@ func (self *Console) Write(s []byte) (e error) {
 	self.con.Write(s)
 	return nil
 }
+func (self *Console) WriteString(s string) (e error) {
+	return self.Write([]byte(s))
+}
 // ReadLine() reads a line from user's keyboard
 func (self *Console) ReadLine() (s string, e error) {
 	defer func() {
