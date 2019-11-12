@@ -380,4 +380,38 @@ func (self *Port) ReadUntil(ends []string) (s string, e error) {
 	return s, nil
 }
 
+type CommandChannel chan []byte
+
+func (self *CommandChannel) SendString(s string) {
+	*self <- []byte(s)
+}
+
+// Use as: `go port.Interact(commandChan, tty.Write)`
+// Close the port to terminate.
+func (self *Port) Interact(cc CommandChannel, write2other func([]byte) error) {
+	for self.IsOpen() {
+		select {
+		case cmd := <- cc:
+			self.Write(cmd)
+		default:
+			if n, e := self.InWaiting(); e != nil {
+				if e != PortNotOpenError {
+					assert(e, "InWaiting: %w", e)
+				}
+				break
+			} else if n > 0 {
+				b := make([]byte, n)
+				if n, e := self.Read(b); e != nil {
+					assert(e, "read: %w", e)
+				} else if n == 0 {
+					continue
+				}
+				if e := write2other(b); e != nil {
+					assert(e, "write2other: %w", e)
+				}
+			}
+		}
+	}
+}
+
 /* EOF */

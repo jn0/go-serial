@@ -20,55 +20,42 @@ func printf(format string, args ...interface{}) (int, error) {
 	return 0, nil
 }
 
+func closemall() {
+	if tty != nil { tty.Close(); printf("signal: tty restored"); }
+	if port != nil { port.Close(); printf("signal: port closed"); }
+}
+
 func sighand(sigchan chan os.Signal) {
 	for {
 		printf("Waiting for signal")
 		sig := <- sigchan // wait for a signal
-		if tty != nil { tty.Close(); printf("tty restored"); }
+		closemall()
 		panic(fmt.Sprintf("Killed with: %v", sig))
 	}
 }
 
-func userEnd(end chan bool, com chan []byte) {
-	printf("User start")
+type StopChannel chan bool
+
+func (self *StopChannel) Wait() {
+	<- *self
+}
+func (self *StopChannel) Notify() {
+	*self <- true
+}
+
+func userEnd(end StopChannel, com CommandChannel) {
+	tty.WriteString("\r\nType 'quit' to terminate.\r\n")
 	for {
 		if s, e := tty.ReadLine(); e != nil {
 			panic(e)
 		} else if strings.HasPrefix(s, "quit") {
 			break
 		} else {
-			com <- []byte(s + "\r")
+			com.SendString(s + "\r")
 		}
 	}
-	end <- true
-	printf("User end")
-}
-
-func modemEnd(end chan bool, com chan []byte) {
-	printf("Modem start")
-	for port.IsOpen() {
-		select {
-		case cmd := <- com: port.Write(cmd)
-		case <- end: printf("\r\nmodem QUIT"); break
-		default:
-			if n, e := port.InWaiting(); e != nil {
-				if e == PortNotOpenError {
-					printf("\r\nport lost")
-					break
-				}
-				panic(e)
-			} else if n > 0 {
-				b := make([]byte, n)
-				if n, e := port.Read(b); e != nil {
-					panic(e)
-				} else if n == 0 {
-					continue
-				}
-				tty.Write(b)
-			}
-		}
-	}
-	printf("Modem end")
+	tty.WriteString("\r\nTerminating...\r\n")
+	end.Notify()
 }
 
 func TestMain(t *testing.T) {
@@ -79,7 +66,7 @@ func TestMain(t *testing.T) {
 	go sighand(sig)
 
 	port = NewSerialPort(USB0)
-	defer func() { port.Close(); printf("\r\nport closed"); }()
+	defer func() { port.Close(); printf("port closed"); }()
 	printf("Port is open: %s", port)
 
 	printf("Sys FS:"); PrintLocations(port.SysFS(), printf)
@@ -88,13 +75,15 @@ func TestMain(t *testing.T) {
 	defer func() { tty.Close(); printf("\r\ntty restored"); }()
 	tty.Write([]byte("\r\n"))
 
-	end := make(chan bool)		// termination mark
-	com := make(chan []byte)	// data xchg
+	end := make(StopChannel)
+	cmd := make(CommandChannel)
 
-	go userEnd(end, com)
-	go modemEnd(end, com)
+	go userEnd(end, cmd)
+	go port.Interact(cmd, tty.Write)
 
-	<-end
+	cmd.SendString("ATI\r")
+
+	end.Wait()
 
 	printf("the end")
 }
