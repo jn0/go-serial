@@ -13,10 +13,15 @@ import (
 
 const PortOpenFlags = os.O_RDWR | syscall.O_NOCTTY | syscall.O_NONBLOCK
 const DefaultTimeout = time.Millisecond * 50 // 0.05 sec
+const CharacterSpecialDeviceMode = os.ModeDevice | os.ModeCharDevice
 
 func exists(path string) bool {
 	_, e := os.Stat(path)
 	return e == nil || !os.IsNotExist(e)
+}
+
+func isCharDevice(stat os.FileInfo) bool {
+	return stat.Mode() & CharacterSpecialDeviceMode == CharacterSpecialDeviceMode
 }
 
 type Port struct {
@@ -80,6 +85,7 @@ func (self *Port) Open(path string) (e error) {
 		}
 		assert(e, "Port.Open(%+q): %v", path, e)
 	}
+	assertb(isCharDevice(stat), "Port.Open(%+q): not a character device", path)
 	assertb(!self.IsOpen(), "Port.Open(%+q): *object* is already open", path)
 
 	self.stat = stat
